@@ -5,10 +5,27 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.BufferedOutputStream;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.DataOutputStream;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.io.Serializable;
+import java.util.Scanner;
 
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JOptionPane;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
 import javax.swing.Timer;
 
 public class Chess extends Frame {
@@ -27,6 +44,8 @@ public class Chess extends Frame {
 
 	private String turn = "white"; // 누구의 순서인지 나타내는 변수
 	private String[] NumtoAl = { "a", "b", "c", "d", "e", "f", "g", "h" }; // 말의 이동을 표기하기 위한 배열
+	private String[] pieceName = { "pawn", "knight", "bishop", "rook", "queen", "king" };
+	private String windata = "";
 
 	private int ci, cj;
 	private int MaxTime = 300; // 최대 시간 제한
@@ -37,6 +56,7 @@ public class Chess extends Frame {
 	private Label lLastMove = null; // 마지막 수를 나타내는 라벨
 	private Label lWhiteTimer = null; // 백의 남은 시간을 나타내는 라벨
 	private Label lBlackTimer = null; // 흑의 남은 시간을 나타내는 라벨
+	private JTextArea lwindata = null;
 
 	private JButton bUndo = null; // 뒤로가기 버튼
 	private JButton bForfeit = null; // 항복 버튼
@@ -44,13 +64,13 @@ public class Chess extends Frame {
 	private JButton bStart = null; // 재시작 버튼
 	private JButton bSettime = null; // 시간 설정 버튼
 	private JButton bSetundo = null; // 물리기 유무 버튼
-
+	private boolean save = false;
 	private JButton bBoard[][] = new JButton[8][8]; // 전체 보드
 
 	private ImageIcon icon_light = new ImageIcon("pic/light.png"); // 밝은 칸을 나타내는 icon
 	private ImageIcon icon_dark = new ImageIcon("pic/dark.png"); // 어두운 칸을 나타내는 icon
 
-	class BoardState { // 체스판의 상태를 저장해 놓기 위한 클래스
+	class BoardState implements Serializable { // 체스판의 상태를 저장해 놓기 위한 클래스
 		int board[][] = new int[8][8];
 		String turn, lastmove;
 		boolean bqc, bkc, wqc, wkc;
@@ -58,11 +78,25 @@ public class Chess extends Frame {
 
 	BoardState[] bstate = new BoardState[600];
 
-	abstract class piece { // 말 클래스 구현
+	abstract class piece implements Serializable { // 말 클래스 구현
 		int i, j; // 말의 위치
 		String color, boardcolor, name; // 말의 색, 말이 위치한 보드 칸의 색, 말의 종류
 		int ind; // 말의 종류를 나타내는 정수 (BoardState 클래스를 위해)
 		ImageIcon Icon, clickIcon; // 그냥 있을 때 아이콘, 클릭되었을 때 아이콘
+
+		piece(int a, int b, String c, int ind) {
+			this.i = a;
+			this.j = b;
+			this.color = c;
+			this.ind = ind;
+			this.name = pieceName[ind - 1];
+			if ((this.i + this.j) % 2 == 0)
+				this.boardcolor = "light";
+			else
+				this.boardcolor = "dark";
+			Icon = new ImageIcon("pic/" + this.color + "_" + this.name + "_" + this.boardcolor + ".png");
+			clickIcon = new ImageIcon("pic/" + this.color + "_" + this.name + "_clicked.png");
+		}
 
 		void move(int a, int b) { // 말을 특정 위치로 이동
 			this.i = a;
@@ -80,19 +114,7 @@ public class Chess extends Frame {
 
 	class Pawn extends piece { // 폰 클래스 구현
 		Pawn(int a, int b, String c) { // 생성자로 초기값 결정
-			this.i = a;
-			this.j = b;
-			this.color = c;
-			this.name = "pawn";
-
-			if ((this.i + this.j) % 2 == 0)
-				this.boardcolor = "light";
-			else
-				this.boardcolor = "dark";
-			Icon = new ImageIcon("pic/" + this.color + "_" + this.name + "_" + this.boardcolor + ".png");
-			clickIcon = new ImageIcon("pic/" + this.color + "_" + this.name + "_clicked.png");
-
-			ind = 1;
+			super(a, b, c, 1);
 		}
 
 		@Override
@@ -160,52 +182,24 @@ public class Chess extends Frame {
 
 	class Knight extends piece { // 나이트 클래스 구현
 		Knight(int a, int b, String c) { // 생성자로 초기값 설정
-			this.i = a;
-			this.j = b;
-			this.color = c;
-			this.name = "knight";
-
-			if ((this.i + this.j) % 2 == 0)
-				this.boardcolor = "light";
-			else
-				this.boardcolor = "dark";
-			Icon = new ImageIcon("pic/" + this.color + "_" + this.name + "_" + this.boardcolor + ".png");
-			clickIcon = new ImageIcon("pic/" + this.color + "_" + this.name + "_clicked.png");
-			ind = 2;
+			super(a, b, c, 2);
 		}
 
 		void setMoveable() {
-			if (this.color == "black") {
-				for (int i = 0; i < 8; i++) {
-					for (int j = 0; j < 8; j++) {
-						if ((Math.abs(this.i - i) == 2 && Math.abs(this.j - j) == 1)
-								|| (Math.abs(this.i - i) == 1 && Math.abs(this.j - j) == 2)) { // 나이트는 한 방향으로 두 칸 이동하고
-																								// 수직한 방향으로 한 칸 이동한다
-							if (board[i][j] == null)
-								Moveable[i][j] = true;
-							else if (board[i][j].color == "white")
-								Moveable[i][j] = true; // 이동한 최종 위치에 상대 기물이 있으면 잡을 수 있다
-							else
-								Moveable[i][j] = false;
-						} else
+			for (int i = 0; i < 8; i++) {
+				for (int j = 0; j < 8; j++) {
+					if ((Math.abs(this.i - i) == 2 && Math.abs(this.j - j) == 1)
+							|| (Math.abs(this.i - i) == 1 && Math.abs(this.j - j) == 2)) { // 나이트는 한 방향으로 두 칸 이동하고
+																							// 수직한 방향으로 한 칸 이동한다
+						if (board[i][j] == null)
+							Moveable[i][j] = true;
+						else if ((board[i][j].color == "white" && this.color == "black")
+								|| (board[i][j].color == "black" && this.color == "white"))
+							Moveable[i][j] = true; // 이동한 최종 위치에 상대 기물이 있으면 잡을 수 있다
+						else
 							Moveable[i][j] = false;
-					}
-				}
-			}
-			if (this.color == "white") {
-				for (int i = 0; i < 8; i++) {
-					for (int j = 0; j < 8; j++) {
-						if ((Math.abs(this.i - i) == 2 && Math.abs(this.j - j) == 1)
-								|| (Math.abs(this.i - i) == 1 && Math.abs(this.j - j) == 2)) {
-							if (board[i][j] == null)
-								Moveable[i][j] = true;
-							else if (board[i][j].color == "black")
-								Moveable[i][j] = true;
-							else
-								Moveable[i][j] = false;
-						} else
-							Moveable[i][j] = false;
-					}
+					} else
+						Moveable[i][j] = false;
 				}
 			}
 		}
@@ -213,17 +207,7 @@ public class Chess extends Frame {
 
 	class Bishop extends piece { // 비숍 클래스 구현
 		Bishop(int a, int b, String c) { // 생성자를 통한 초기값 설정
-			this.i = a;
-			this.j = b;
-			this.color = c;
-			this.name = "bishop";
-
-			if ((this.i + this.j) % 2 == 0)
-				this.boardcolor = "light";
-			else
-				this.boardcolor = "dark";
-			Icon = new ImageIcon("pic/" + this.color + "_" + this.name + "_" + this.boardcolor + ".png");
-			clickIcon = new ImageIcon("pic/" + this.color + "_" + this.name + "_clicked.png");
+			super(a, b, c, 3);
 			ind = 3;
 		}
 
@@ -232,125 +216,23 @@ public class Chess extends Frame {
 				for (int j = 0; j < 8; j++)
 					Moveable[i][j] = false;
 
-			if (this.color == "black") { // 비숍은 대각선으로 원하는 만큼 이동할 수 있다. 단, 앞에 말이 가로막고 있으면 이동할 수 없고 상대 말이면 그 말을 잡을 수 있다
-				int i = this.i + 1, j = this.j + 1;
-				while (0 <= i && i < 8 && 0 <= j && j < 8) {
-					if (board[i][j] == null)
-						Moveable[i][j] = true;
-					else if (board[i][j].color == "black")
-						break;
-					else {
-						Moveable[i][j] = true;
-						break;
-					}
-					i++;
-					j++; // 우측 하단 방향
-				}
+			int[] di = { 1, 1, -1, -1 };
+			int[] dj = { 1, -1, 1, -1 };
 
-				i = this.i + 1;
-				j = this.j - 1;
+			for (int k = 0; k < 4; k++) {
+				int i = this.i + di[k], j = this.j + dj[k];
 				while (0 <= i && i < 8 && 0 <= j && j < 8) {
 					if (board[i][j] == null)
 						Moveable[i][j] = true;
-					else if (board[i][j].color == "black")
+					else if ((board[i][j].color == "black" && this.color == "black")
+							|| (board[i][j].color == "white" && this.color == "white"))
 						break;
 					else {
 						Moveable[i][j] = true;
 						break;
 					}
-					i++;
-					j--; // 좌측 하단 방향
-				}
-
-				i = this.i - 1;
-				j = this.j + 1;
-				while (0 <= i && i < 8 && 0 <= j && j < 8) {
-					if (board[i][j] == null)
-						Moveable[i][j] = true;
-					else if (board[i][j].color == "black")
-						break;
-					else {
-						Moveable[i][j] = true;
-						break;
-					}
-					i--;
-					j++; // 우측 상단 방향
-				}
-
-				i = this.i - 1;
-				j = this.j - 1;
-				while (0 <= i && i < 8 && 0 <= j && j < 8) {
-					if (board[i][j] == null)
-						Moveable[i][j] = true;
-					else if (board[i][j].color == "black")
-						break;
-					else {
-						Moveable[i][j] = true;
-						break;
-					}
-					i--;
-					j--; // 좌측 상단 방향
-				}
-			}
-
-			if (this.color == "white") {
-				int i = this.i + 1, j = this.j + 1;
-				while (0 <= i && i < 8 && 0 <= j && j < 8) {
-					if (board[i][j] == null)
-						Moveable[i][j] = true;
-					else if (board[i][j].color == "white")
-						break;
-					else {
-						Moveable[i][j] = true;
-						break;
-					}
-					i++;
-					j++;
-				}
-
-				i = this.i + 1;
-				j = this.j - 1;
-				while (0 <= i && i < 8 && 0 <= j && j < 8) {
-					if (board[i][j] == null)
-						Moveable[i][j] = true;
-					else if (board[i][j].color == "white")
-						break;
-					else {
-						Moveable[i][j] = true;
-						break;
-					}
-					i++;
-					j--;
-				}
-
-				i = this.i - 1;
-				j = this.j + 1;
-				while (0 <= i && i < 8 && 0 <= j && j < 8) {
-					if (board[i][j] == null)
-						Moveable[i][j] = true;
-					else if (board[i][j].color == "white")
-						break;
-					else {
-						Moveable[i][j] = true;
-						break;
-					}
-					i--;
-					j++;
-				}
-
-				i = this.i - 1;
-				j = this.j - 1;
-				while (0 <= i && i < 8 && 0 <= j && j < 8) {
-					if (board[i][j] == null)
-						Moveable[i][j] = true;
-					else if (board[i][j].color == "white")
-						break;
-					else {
-						Moveable[i][j] = true;
-						break;
-					}
-					i--;
-					j--;
+					i += di[k];
+					j += dj[k];
 				}
 			}
 		}
@@ -358,18 +240,7 @@ public class Chess extends Frame {
 
 	class Rook extends piece { // 룩 클래스 구현
 		Rook(int a, int b, String c) { // 생성자를 통한 초기값 설정
-			this.i = a;
-			this.j = b;
-			this.color = c;
-			this.name = "rook";
-
-			if ((this.i + this.j) % 2 == 0)
-				this.boardcolor = "light";
-			else
-				this.boardcolor = "dark";
-			Icon = new ImageIcon("pic/" + this.color + "_" + this.name + "_" + this.boardcolor + ".png");
-			clickIcon = new ImageIcon("pic/" + this.color + "_" + this.name + "_clicked.png");
-			ind = 4;
+			super(a, b, c, 4);
 		}
 
 		@Override
@@ -397,87 +268,24 @@ public class Chess extends Frame {
 			for (int i = 0; i < 8; i++)
 				for (int j = 0; j < 8; j++)
 					Moveable[i][j] = false;
-			if (this.color == "black") {
-				for (int i = this.i + 1; i < 8; i++) { // 아래쪽 방향
-					if (board[i][this.j] == null)
-						Moveable[i][this.j] = true;
-					else if (board[i][this.j].color == "white") {
-						Moveable[i][this.j] = true;
-						break;
-					} else
-						break;
-				}
 
-				for (int i = this.i - 1; i >= 0; i--) { // 위쪽 방향
-					if (board[i][this.j] == null)
-						Moveable[i][this.j] = true;
-					else if (board[i][this.j].color == "white") {
-						Moveable[i][this.j] = true;
-						break;
-					} else
-						break;
-				}
+			int[] di = { 1, -1, 0, 0 };
+			int[] dj = { 0, 0, 1, -1 };
 
-				for (int j = this.j + 1; j < 8; j++) { // 오른쪽 방향
-					if (board[this.i][j] == null)
-						Moveable[this.i][j] = true;
-					else if (board[this.i][j].color == "white") {
-						Moveable[this.i][j] = true;
+			for (int k = 0; k < 4; k++) {
+				int i = this.i + di[k], j = this.j + dj[k];
+				while (0 <= i && i < 8 && 0 <= j && j < 8) {
+					if (board[i][j] == null)
+						Moveable[i][j] = true;
+					else if ((board[i][j].color == "black" && this.color == "black")
+							|| (board[i][j].color == "white" && this.color == "white"))
 						break;
-					} else
+					else {
+						Moveable[i][j] = true;
 						break;
-				}
-
-				for (int j = this.j - 1; j >= 0; j--) { // 왼쪽 방향
-					if (board[this.i][j] == null)
-						Moveable[this.i][j] = true;
-					else if (board[this.i][j].color == "white") {
-						Moveable[this.i][j] = true;
-						break;
-					} else
-						break;
-				}
-			}
-
-			if (this.color == "white") {
-				for (int i = this.i + 1; i < 8; i++) {
-					if (board[i][this.j] == null)
-						Moveable[i][this.j] = true;
-					else if (board[i][this.j].color == "black") {
-						Moveable[i][this.j] = true;
-						break;
-					} else
-						break;
-				}
-
-				for (int i = this.i - 1; i >= 0; i--) {
-					if (board[i][this.j] == null)
-						Moveable[i][this.j] = true;
-					else if (board[i][this.j].color == "black") {
-						Moveable[i][this.j] = true;
-						break;
-					} else
-						break;
-				}
-
-				for (int j = this.j + 1; j < 8; j++) {
-					if (board[this.i][j] == null)
-						Moveable[this.i][j] = true;
-					else if (board[this.i][j].color == "black") {
-						Moveable[this.i][j] = true;
-						break;
-					} else
-						break;
-				}
-
-				for (int j = this.j - 1; j >= 0; j--) {
-					if (board[this.i][j] == null)
-						Moveable[this.i][j] = true;
-					else if (board[this.i][j].color == "black") {
-						Moveable[this.i][j] = true;
-						break;
-					} else
-						break;
+					}
+					i += di[k];
+					j += dj[k];
 				}
 			}
 		}
@@ -485,18 +293,7 @@ public class Chess extends Frame {
 
 	class Queen extends piece { // 퀸 클래스 구현
 		Queen(int a, int b, String c) { // 생성자를 통한 초기값 설정
-			this.i = a;
-			this.j = b;
-			this.color = c;
-			this.name = "queen";
-
-			if ((this.i + this.j) % 2 == 0)
-				this.boardcolor = "light";
-			else
-				this.boardcolor = "dark";
-			Icon = new ImageIcon("pic/" + this.color + "_" + this.name + "_" + this.boardcolor + ".png");
-			clickIcon = new ImageIcon("pic/" + this.color + "_" + this.name + "_clicked.png");
-			ind = 5;
+			super(a, b, c, 5);
 		}
 
 		void setMoveable() { // 퀸은 평행선으로, 대각선으로 원하는 만큼 이동할 수 있다. 단, 앞에 말이 가로막고 있으면 이동할 수 없고 상대 말이면 그 말을 잡을 수
@@ -505,205 +302,23 @@ public class Chess extends Frame {
 				for (int j = 0; j < 8; j++)
 					Moveable[i][j] = false;
 
-			if (this.color == "black") {
-				int i = this.i + 1, j = this.j + 1;
+			int[] di = { 1, 1, -1, -1, 1, -1, 0, 0 };
+			int[] dj = { 1, -1, 1, -1, 0, 0, 1, -1 };
+
+			for (int k = 0; k < 8; k++) {
+				int i = this.i + di[k], j = this.j + dj[k];
 				while (0 <= i && i < 8 && 0 <= j && j < 8) {
 					if (board[i][j] == null)
 						Moveable[i][j] = true;
-					else if (board[i][j].color == "black")
+					else if ((board[i][j].color == "black" && this.color == "black")
+							|| (board[i][j].color == "white" && this.color == "white"))
 						break;
 					else {
 						Moveable[i][j] = true;
 						break;
 					}
-					i++;
-					j++; // 우측 하단
-				}
-
-				i = this.i + 1;
-				j = this.j - 1;
-				while (0 <= i && i < 8 && 0 <= j && j < 8) {
-					if (board[i][j] == null)
-						Moveable[i][j] = true;
-					else if (board[i][j].color == "black")
-						break;
-					else {
-						Moveable[i][j] = true;
-						break;
-					}
-					i++;
-					j--; // 좌측 하단
-				}
-
-				i = this.i - 1;
-				j = this.j + 1;
-				while (0 <= i && i < 8 && 0 <= j && j < 8) {
-					if (board[i][j] == null)
-						Moveable[i][j] = true;
-					else if (board[i][j].color == "black")
-						break;
-					else {
-						Moveable[i][j] = true;
-						break;
-					}
-					i--;
-					j++; // 우측 상단
-				}
-
-				i = this.i - 1;
-				j = this.j - 1;
-				while (0 <= i && i < 8 && 0 <= j && j < 8) {
-					if (board[i][j] == null)
-						Moveable[i][j] = true;
-					else if (board[i][j].color == "black")
-						break;
-					else {
-						Moveable[i][j] = true;
-						break;
-					}
-					i--;
-					j--; // 좌측 상단
-				}
-
-				for (i = this.i + 1; i < 8; i++) { // 아래쪽
-					if (board[i][this.j] == null)
-						Moveable[i][this.j] = true;
-					else if (board[i][this.j].color == "white") {
-						Moveable[i][this.j] = true;
-						break;
-					} else
-						break;
-				}
-
-				for (i = this.i - 1; i >= 0; i--) { // 위쪽
-					if (board[i][this.j] == null)
-						Moveable[i][this.j] = true;
-					else if (board[i][this.j].color == "white") {
-						Moveable[i][this.j] = true;
-						break;
-					} else
-						break;
-				}
-
-				for (j = this.j + 1; j < 8; j++) { // 오른쪽
-					if (board[this.i][j] == null)
-						Moveable[this.i][j] = true;
-					else if (board[this.i][j].color == "white") {
-						Moveable[this.i][j] = true;
-						break;
-					} else
-						break;
-				}
-
-				for (j = this.j - 1; j >= 0; j--) { // 왼쪽
-					if (board[this.i][j] == null)
-						Moveable[this.i][j] = true;
-					else if (board[this.i][j].color == "white") {
-						Moveable[this.i][j] = true;
-						break;
-					} else
-						break;
-				}
-			}
-
-			if (this.color == "white") {
-				int i = this.i + 1, j = this.j + 1;
-				while (0 <= i && i < 8 && 0 <= j && j < 8) {
-					if (board[i][j] == null)
-						Moveable[i][j] = true;
-					else if (board[i][j].color == "white")
-						break;
-					else {
-						Moveable[i][j] = true;
-						break;
-					}
-					i++;
-					j++;
-				}
-
-				i = this.i + 1;
-				j = this.j - 1;
-				while (0 <= i && i < 8 && 0 <= j && j < 8) {
-					if (board[i][j] == null)
-						Moveable[i][j] = true;
-					else if (board[i][j].color == "white")
-						break;
-					else {
-						Moveable[i][j] = true;
-						break;
-					}
-					i++;
-					j--;
-				}
-
-				i = this.i - 1;
-				j = this.j + 1;
-				while (0 <= i && i < 8 && 0 <= j && j < 8) {
-					if (board[i][j] == null)
-						Moveable[i][j] = true;
-					else if (board[i][j].color == "white")
-						break;
-					else {
-						Moveable[i][j] = true;
-						break;
-					}
-					i--;
-					j++;
-				}
-
-				i = this.i - 1;
-				j = this.j - 1;
-				while (0 <= i && i < 8 && 0 <= j && j < 8) {
-					if (board[i][j] == null)
-						Moveable[i][j] = true;
-					else if (board[i][j].color == "white")
-						break;
-					else {
-						Moveable[i][j] = true;
-						break;
-					}
-					i--;
-					j--;
-				}
-
-				for (i = this.i + 1; i < 8; i++) {
-					if (board[i][this.j] == null)
-						Moveable[i][this.j] = true;
-					else if (board[i][this.j].color == "black") {
-						Moveable[i][this.j] = true;
-						break;
-					} else
-						break;
-				}
-
-				for (i = this.i - 1; i >= 0; i--) {
-					if (board[i][this.j] == null)
-						Moveable[i][this.j] = true;
-					else if (board[i][this.j].color == "black") {
-						Moveable[i][this.j] = true;
-						break;
-					} else
-						break;
-				}
-
-				for (j = this.j + 1; j < 8; j++) {
-					if (board[this.i][j] == null)
-						Moveable[this.i][j] = true;
-					else if (board[this.i][j].color == "black") {
-						Moveable[this.i][j] = true;
-						break;
-					} else
-						break;
-				}
-
-				for (j = this.j - 1; j >= 0; j--) {
-					if (board[this.i][j] == null)
-						Moveable[this.i][j] = true;
-					else if (board[this.i][j].color == "black") {
-						Moveable[this.i][j] = true;
-						break;
-					} else
-						break;
+					i += di[k];
+					j += dj[k];
 				}
 			}
 		}
@@ -711,18 +326,7 @@ public class Chess extends Frame {
 
 	class King extends piece { // 킹 클래스 구현
 		King(int a, int b, String c) { // 생성자를 통한 초기값 설정
-			this.i = a;
-			this.j = b;
-			this.color = c;
-			this.name = "king";
-
-			if ((this.i + this.j) % 2 == 0)
-				this.boardcolor = "light";
-			else
-				this.boardcolor = "dark";
-			Icon = new ImageIcon("pic/" + this.color + "_" + this.name + "_" + this.boardcolor + ".png");
-			clickIcon = new ImageIcon("pic/" + this.color + "_" + this.name + "_clicked.png");
-			ind = 6;
+			super(a, b, c, 6);
 		}
 
 		@Override
@@ -750,47 +354,24 @@ public class Chess extends Frame {
 			for (int i = 0; i < 8; i++)
 				for (int j = 0; j < 8; j++)
 					Moveable[i][j] = false;
-			if (this.color == "black") {
-				for (int i = this.i - 1; i <= this.i + 1; i++) {
-					for (int j = this.j - 1; j <= this.j + 1; j++) {
-						if (0 <= i && i < 8 && 0 <= j && j < 8) {
-							if (board[i][j] == null)
-								Moveable[i][j] = true;
-							else if (board[i][j].color == "white")
-								Moveable[i][j] = true;
-							else
-								continue;
-						}
+			for (int i = this.i - 1; i <= this.i + 1; i++) {
+				for (int j = this.j - 1; j <= this.j + 1; j++) {
+					if (0 <= i && i < 8 && 0 <= j && j < 8) {
+						if (board[i][j] == null)
+							Moveable[i][j] = true;
+						else if ((board[i][j].color == "white" && this.color == "black")
+								|| (board[i][j].color == "black" && this.color == "white"))
+							Moveable[i][j] = true;
+						else
+							continue;
 					}
 				}
-				if (bqc && board[0][1] == null && board[0][2] == null && board[0][3] == null)
-					Moveable[0][2] = true;
-				if (bkc && board[0][5] == null && board[0][6] == null)
-					Moveable[0][6] = true;
 			}
-			if (this.color == "white") {
-				for (int i = this.i - 1; i <= this.i + 1; i++) {
-					for (int j = this.j - 1; j <= this.j + 1; j++) {
-						if (0 <= i && i < 8 && 0 <= j && j < 8) {
-							if (board[i][j] == null)
-								Moveable[i][j] = true;
-							else if (board[i][j].color == "black")
-								Moveable[i][j] = true;
-							else
-								continue;
-						}
-					}
-				}
-				if (wqc && board[7][2] == null && board[7][3] == null && board[7][1] == null)
-					Moveable[7][2] = true;
-				if (wkc && board[7][5] == null && board[7][6] == null)
-					Moveable[7][6] = true;
-			}
+			if (bqc && board[0][1] == null && board[0][2] == null && board[0][3] == null)
+				Moveable[0][2] = true;
+			if (bkc && board[0][5] == null && board[0][6] == null)
+				Moveable[0][6] = true;
 		}
-	}
-
-	public static void main(String[] args) {
-		Chess chess = new Chess(); // 시작
 	}
 
 	Chess() {
@@ -807,16 +388,25 @@ public class Chess extends Frame {
 		add(labels, BorderLayout.NORTH); // 라벨들은 위쪽
 
 		Font font = new Font("Arial", Font.PLAIN, 20); // 폰트 설정
+		try (BufferedReader br = new BufferedReader(new FileReader("windata.txt"))) {
+			String l;
+			while ((l = br.readLine()) != null)
+				windata += (l + "\r\n");
+		} catch (IOException e) {
+		}
 
 		lLastMove = new Label("Last Move:                  "); // 초기 텍스트 설정
 		lWhiteTimer = new Label("White:                    ");
 		lBlackTimer = new Label("Black:                    ");
+		lwindata = new JTextArea(windata);
 		lLastMove.setSize(new Dimension(200, 50)); // 크기 설정
 		lWhiteTimer.setSize(new Dimension(200, 50));
 		lBlackTimer.setSize(new Dimension(200, 50));
+		lwindata.setSize(new Dimension(20,20));
 		lLastMove.setFont(font); // 폰트 설정
 		lWhiteTimer.setFont(font);
 		lBlackTimer.setFont(font);
+		lwindata.setFont(font);
 
 		bUndo = new JButton("Undo"); // 되돌리기 Button
 		bForfeit = new JButton("Forfeit"); // 항복 Button
@@ -849,7 +439,9 @@ public class Chess extends Frame {
 
 		Panel board = new Panel(); // 체스판을 나타낼 panel
 		add(board); // Frame에 추가
+		add(lwindata, BorderLayout.EAST);
 		board.setLayout(null);
+		
 
 		for (int i = 0; i < 8; i++) {
 			for (int j = 0; j < 8; j++) {
@@ -898,9 +490,11 @@ public class Chess extends Frame {
 				if (forfeit == 0) {
 					Label forfeitLabel = null;
 					if (turn == "white") {
-						forfeitLabel.setText("White Forfeits");
+						forfeitLabel = new Label("White Forfeits");
+						windata += "Black Win            \r\n";
 					} else {
-						forfeitLabel.setText("Black Forfeits");
+						forfeitLabel = new Label("Black Forfeits");
+						windata += "White Win            \r\n";
 					}
 					forfeitLabel.setFont(font);
 					JOptionPane.showMessageDialog(null, forfeitLabel, "Game Over !!", JOptionPane.INFORMATION_MESSAGE); // 게임이
@@ -927,6 +521,7 @@ public class Chess extends Frame {
 				int draw = JOptionPane.showConfirmDialog(null, label); // 무승부를 받아들일 것인지 물어봄
 				if (draw == 0) {
 					label.setText("Draw!!");
+					windata += "Draw            \r\n";
 					JOptionPane.showMessageDialog(null, label, "Draw", JOptionPane.INFORMATION_MESSAGE); // 무승부임을 나타냄
 					initGame(); // 재시작
 				} else if (draw == 1) {
@@ -1010,10 +605,14 @@ public class Chess extends Frame {
 		lBlackTimer.setText("Black: " + btime / 60 + " min " + btime % 60 + " sec");
 		if (wtime == 0 || btime == 0) { // 한 쪽 시간이 다 되었을 때
 			Label label;
-			if (wtime == 0)
+			if (wtime == 0) {
 				label = new Label("White loses on time");
-			else
+				windata += "Black Win            \r\n";
+			}
+			else {
 				label = new Label("Black loses on time");
+				windata += "White Win            \r\n";
+			}
 			label.setFont(new Font("Arial", Font.PLAIN, 20));
 			JOptionPane.showMessageDialog(null, label, "Game Over!", JOptionPane.INFORMATION_MESSAGE); // 게임 끝났다고 표시
 			initGame(); // 재시작
@@ -1078,6 +677,7 @@ public class Chess extends Frame {
 	}
 
 	void initGame() { // 게임 시작 메소드
+
 		for (int i = 0; i < 8; i++)
 			for (int j = 0; j < 8; j++)
 				board[i][j] = null; // 모든 값을 초기화
@@ -1109,11 +709,8 @@ public class Chess extends Frame {
 		}
 		board[0][0] = new Rook(0, 0, "black");
 		board[7][0] = new Rook(7, 0, "white");
-		;
 		board[0][7] = new Rook(0, 7, "black");
-		;
-		board[7][7] = new Rook(7, 7, "white");
-		; // 룩
+		board[7][7] = new Rook(7, 7, "white"); // 룩
 		board[0][1] = new Knight(0, 1, "black");
 		board[7][1] = new Knight(7, 1, "white");
 		board[0][6] = new Knight(0, 6, "black");
@@ -1285,9 +882,18 @@ public class Chess extends Frame {
 			}
 		}
 	}
+
 	class MyWindowAdapter extends WindowAdapter {
 		public void windowClosing(WindowEvent e) {
+			save();
 			System.exit(0);
+		}
+	}
+
+	void save() {
+		try (BufferedWriter bw = new BufferedWriter(new FileWriter("windata.txt"))) {
+			bw.write(windata);
+		} catch (IOException e) {
 		}
 	}
 }
